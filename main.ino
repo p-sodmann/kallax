@@ -41,8 +41,10 @@ void setup() {
 
     Serial.println();
     Serial.println("Initializing...");
-    
+
+    WiFi.hostname("kallax");
     WiFi.begin("Feelan", "meowmeow");
+    
     while (WiFi.status() != WL_CONNECTED){
       delay(500);
       Serial.print(".");
@@ -84,40 +86,62 @@ void showPattern(){
 void loop() {
   int packetSize = Udp.parsePacket();
   if (packetSize){
-    Serial.printf("Received %d bytes from %s, port %d\n", packetSize, Udp.remoteIP().toString().c_str(), Udp.remotePort());
+    
     int len = Udp.read(incomingPacket, 255);
     
     if (len > 0){
       incomingPacket[len] = 0;
     }
 
-    if(incomingPacket[0] == 0){
-      aniMode = 0;
-      colorOdd[0] = incomingPacket[1];
-      colorOdd[1] = incomingPacket[2];
-      colorOdd[2] = incomingPacket[3];
-      colorOdd[3] = incomingPacket[4];
-      
-      colorEven[0] = incomingPacket[5];
-      colorEven[1] = incomingPacket[6];
-      colorEven[2] = incomingPacket[7];
-      colorEven[3] = incomingPacket[8];
-      
-      showPattern();
-    }
+    animationMode = incomingPacket[0];
 
-    else{
-      aniMode = 1;
-      for(uint8_t i = 0; i < 25; i++){
-        if(stage[i][0] < incomingPacket[i*5+0+1]){
+    switch (animationMode){
+      // set a fixed pattern
+      case 0:
+        colorOdd[0] = incomingPacket[1];
+        colorOdd[1] = incomingPacket[2];
+        colorOdd[2] = incomingPacket[3];
+        colorOdd[3] = incomingPacket[4];
+        
+        colorEven[0] = incomingPacket[5];
+        colorEven[1] = incomingPacket[6];
+        colorEven[2] = incomingPacket[7];
+        colorEven[3] = incomingPacket[8];
+        
+        showPattern();
+        
+        break
+        
+      case 1:
+        // take a value and fade it out
+        for(uint8_t i = 0; i < 25; i++){
+          if(stage[i][0] < incomingPacket[i*5+0+1]){
+            for(uint8_t j = 0; j < 5; j++){            
+              stage[i][j] = incomingPacket[i*5+j+1];
+            }
+          }
+        }
+
+      case 2:
+        // set constant colors for each box
+        for(uint8_t i = 0; i < 25; i++){
           for(uint8_t j = 0; j < 5; j++){            
             stage[i][j] = incomingPacket[i*5+j+1];
           }
+            
+          strip.SetPixelColor(17 * x + i,
+            RgbwColor(
+                int(stage[i][1]), 
+                int(stage[i][2]), 
+                int(stage[i][3]), 
+                int(stage[i][4])
+            )
+          );
         }
-      }
+        strip.Show();
+        break
     }
     
-    Serial.println(incomingPacket[0]);
     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
     Udp.write(replyPacekt);
     Udp.endPacket();
@@ -129,14 +153,23 @@ void loop() {
       lastFrame = millis() +5;
       
       for(uint8_t x = 0; x < 25; x++){
-        if(stage[x][0] > 0)
+        
+        // decrease brightness by 5
+        if(stage[x][0] > 0){
           stage[x][0] -= 5;
-        
-        w = RgbwColor(int(stage[x][0] / 255.0 * stage[x][1]), int(stage[x][0] / 255.0 * stage[x][2]), int(stage[x][0] / 255.0 * stage[x][3]), int(stage[x][0] / 255.0 * stage[x][4]));
-        for (uint8_t i = 0; i < 17; i++) {
-            strip.SetPixelColor(17 * x + i, w);
         }
-        
+                 
+        for (uint8_t i = 0; i < 17; i++) {
+            strip.SetPixelColor(17 * x + i,
+              RgbwColor(
+                int(stage[x][0] * stage[x][1] / 255), 
+                int(stage[x][0] * stage[x][2] / 255), 
+                int(stage[x][0] * stage[x][3] / 255), 
+                int(stage[x][0] * stage[x][4] / 255)
+              )
+            );
+        }
+   
       }
       strip.Show();
     }
